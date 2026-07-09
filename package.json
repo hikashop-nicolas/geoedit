@@ -1,0 +1,43 @@
+{
+  "name": "geoedit",
+  "version": "0.1.0",
+  "description": "Standalone client-side map editor for geospatial files (GeoJSON, KML, KMZ, GPX, TopoJSON, WKT): view and edit features on an interactive map, preserving your file byte-for-byte, all in the browser.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:demo": "vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "vite",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "prepare": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tmcw/togeojson": "^7.1.2",
+    "fflate": "^0.8.3",
+    "geojs": "^1.19.1",
+    "hammerjs": "^2.0.8",
+    "jsonc-parser": "^3.3.1",
+    "saxes": "^6.0.0",
+    "topojson-client": "^3.1.0",
+    "wellknown": "^0.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.0.0"
+  }
+}

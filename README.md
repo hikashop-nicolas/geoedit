@@ -1,0 +1,101 @@
+# geoedit
+
+A standalone, framework-agnostic, client-side **map editor** for geospatial files:
+**GeoJSON, KML, KMZ, GPX, TopoJSON and WKT**. It renders a file's features on an
+interactive map, lets you **view and edit** them (move/reshape geometry, edit
+properties, add/delete features, restyle), and writes the changes **back into your
+file byte-for-byte**, all in the browser. No server, no upload.
+
+**[▶ Live demo](https://hikashop-nicolas.github.io/geoedit/)** — drop a `.geojson`,
+`.kml`, `.kmz`, `.gpx`, `.topojson` or `.wkt` file and edit it on the map.
+
+```ts
+import { createGeoEditor } from "geoedit";
+
+const handle = createGeoEditor(containerEl, { text: fileText, filename: "map.geojson" }, {
+  onChange: () => console.log("edited"),
+});
+
+// later, to save:
+const edited = handle.getText();        // the edited file, byte-for-byte
+// for .kmz, use handle.getBytes() instead (re-zipped)
+```
+
+## What it does
+
+- **Renders** any GeoJSON / KML / KMZ / GPX / TopoJSON / WKT on a GeoJS map over an
+  OpenStreetMap basemap. Only tile requests (z/x/y) leave the browser — **never any
+  file data**.
+- **Edits, byte-lossless.** GeoJSON edits are applied with a JSON CST
+  ([`jsonc-parser`](https://github.com/microsoft/node-jsonc-parser)); KML/GPX edits are
+  spliced into the source with a position-aware SAX parser
+  ([`saxes`](https://github.com/lddubeau/saxes)). Only the span you changed is
+  rewritten — styling, folders, ExtendedData, comments and formatting are preserved.
+- **Draw** points, lines and areas with a popup form; **reshape** existing geometry by
+  dragging vertices; **delete** features; **edit any property** (and add/remove keys);
+  **restyle** with a colour picker (simplestyle / KML `<Style>`).
+- **Feature list** with filter and zoom-to; optional **name labels** on the map.
+- **Convert / export** the current document to GeoJSON, KML or GPX.
+- **TopoJSON and WKT** are view-only (export them to an editable format).
+
+## Editing model
+
+The document's **source text is the model**. The editor never round-trips through a
+lossy intermediate: it holds your original bytes and rewrites only the exact spans you
+touch. This is the same "edit in place, preserve everything untouched" philosophy as
+the sibling libraries (docxedit / odtedit / sheetedit).
+
+| Format | Editing | Notes |
+|---|---|---|
+| GeoJSON (`FeatureCollection`) | full, byte-lossless | properties, geometry, add/delete, style |
+| KML / KMZ | full, byte-lossless | geometry (point/line/polygon), name/description, add/delete |
+| GPX | byte-lossless | waypoint move, name/description, add/delete; track/route vertex-edit deferred |
+| TopoJSON / WKT | view-only | export to edit |
+
+## API
+
+```ts
+function createGeoEditor(
+  container: HTMLElement,
+  input: { text?: string; bytes?: Uint8Array; filename?: string },
+  opts?: {
+    filename?: string;
+    editable?: boolean;                                   // override the auto-detected default
+    onChange?: () => void;
+    onExport?: (name: string, bytes: Uint8Array) => void; // default: browser download
+    onError?: (message: string) => void;                  // default: console.error
+  },
+): {
+  getText(): string;
+  getBytes(): Uint8Array | undefined;                     // .kmz
+  destroy(): void;
+};
+```
+
+Pass `text` for text formats and `bytes` for `.kmz`. The format is detected from the
+content and file name. The pure edit helpers (`applyPropertyEdit`, `setKmlGeometry`,
+`buildKmlDocument`, …) are also exported for headless use.
+
+## Runtime dependencies
+
+[`geojs`](https://github.com/OpenGeoscience/geojs) (map, Apache-2.0),
+[`@tmcw/togeojson`](https://github.com/placemark/togeojson) (KML/GPX → GeoJSON, ISC),
+[`saxes`](https://github.com/lddubeau/saxes) (position-aware XML, ISC),
+[`jsonc-parser`](https://github.com/microsoft/node-jsonc-parser) (JSON CST, MIT),
+[`fflate`](https://github.com/101arrowz/fflate) (KMZ zip, MIT),
+[`topojson-client`](https://github.com/topojson/topojson-client) (MIT),
+[`wellknown`](https://github.com/mapbox/wellknown) (WKT, ISC),
+[`hammerjs`](https://github.com/hammerjs/hammer.js) (touch, MIT).
+
+## Develop
+
+```bash
+npm install
+npm run dev       # demo at localhost:5173
+npm test          # byte-lossless round-trip tests
+npm run build     # emit dist/ (tsc)
+```
+
+## License
+
+MIT
