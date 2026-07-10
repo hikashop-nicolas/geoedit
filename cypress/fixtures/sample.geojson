@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Alpha", "pop": 42 },
+      "geometry": { "type": "Point", "coordinates": [2.35, 48.86] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Beta" },
+      "geometry": { "type": "Point", "coordinates": [2.40, 48.88] }
+    }
+  ]
+}

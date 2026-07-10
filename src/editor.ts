@@ -613,6 +613,7 @@ class GeoEditor {
     }
 
     const labels = iconButton(t("toggleLabels"), ICON.label);
+    labels.dataset.role = "labels";
     labels.addEventListener("click", () => {
       this.labelsOn = !this.labelsOn;
       labels.classList.toggle("is-active", this.labelsOn);
@@ -630,10 +631,12 @@ class GeoEditor {
     }
 
     const list = iconButton(t("featureList"), ICON.list);
+    list.dataset.role = "list";
     list.addEventListener("click", () => this.openFeatureList());
     bar.appendChild(list);
 
     const exp = iconButton(t("exportAs") + "…", ICON.export);
+    exp.dataset.role = "export";
     exp.addEventListener("click", () => this.openExportPanel());
     bar.appendChild(exp);
     return bar;
