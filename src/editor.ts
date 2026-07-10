@@ -70,6 +70,15 @@ export interface GeoEditorHandle {
 }
 
 const STYLE_ID = "geoedit-style";
+// simplestyle-spec keys that affect how a feature is drawn (edits to these need a redraw).
+const STYLE_KEYS = new Set([
+  "marker-color",
+  "stroke",
+  "stroke-width",
+  "stroke-opacity",
+  "fill",
+  "fill-opacity",
+]);
 
 function ensureStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -1191,10 +1200,11 @@ class GeoEditor {
     try {
       this.pushHistory();
       this.source = deleteProperty(this.source, gjIdx, key);
+      // In-place update (no full re-render); redraw if a style key was removed.
       const f = this.features[gjIdx];
       if (f?.properties) delete f.properties[key];
+      if (STYLE_KEYS.has(key)) this.map?.draw();
       this.onChange?.();
-      this.renderFeatures(this.currentFc());
       this.reshow(gjIdx, -1);
     } catch (e) {
       this.notifyError(t("errDelProp") + ": " + errMsg(e));
@@ -1342,8 +1352,11 @@ class GeoEditor {
       if (next === this.source) return;
       this.pushHistory();
       this.source = next;
+      // Mutate the rendered feature in place (the GeoJS layer holds it by reference), so
+      // no full re-render is needed. A style change just needs a redraw to re-apply colours.
       const f = this.features[idx];
       if (f && f.properties) f.properties[key] = value;
+      if (STYLE_KEYS.has(key)) this.map?.draw();
       this.onChange?.();
     } catch (e) {
       this.notifyError(t("errUpdateProp") + ": " + errMsg(e));
