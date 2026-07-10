@@ -23,9 +23,9 @@ const edited = handle.getText();        // the edited file, byte-for-byte
 
 ## What it does
 
-- **Renders** any GeoJSON / KML / KMZ / GPX / TopoJSON / WKT on a GeoJS map over an
-  OpenStreetMap basemap. Only tile requests (z/x/y) leave the browser — **never any
-  file data**.
+- **Renders** any GeoJSON / KML / KMZ / GPX / TopoJSON / WKT / **Shapefile** on a GeoJS
+  map over an OpenStreetMap basemap. Only tile requests (z/x/y) leave the browser —
+  **never any file data**.
 - **Edits, byte-lossless.** GeoJSON edits are applied with a JSON CST
   ([`jsonc-parser`](https://github.com/microsoft/node-jsonc-parser)); KML/GPX edits are
   spliced into the source with a position-aware SAX parser
@@ -33,10 +33,14 @@ const edited = handle.getText();        // the edited file, byte-for-byte
   rewritten — styling, folders, ExtendedData, comments and formatting are preserved.
 - **Draw** points, lines and areas with a popup form; **reshape** existing geometry by
   dragging vertices; **delete** features; **edit any property** (and add/remove keys);
-  **restyle** with a colour picker (simplestyle / KML `<Style>`).
-- **Feature list** with filter and zoom-to; optional **name labels** on the map.
+  **restyle** with a colour picker (simplestyle for GeoJSON, inline `<Style>` for KML).
+- **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z) of every edit.
+- **Feature list** with filter and zoom-to; optional **name labels**; a **measure tool**
+  (geodesic distance + area) and a live **coordinate readout**.
 - **Convert / export** the current document to GeoJSON, KML or GPX.
-- **TopoJSON and WKT** are view-only (export them to an editable format).
+- **Multilingual** (English, French, Japanese; auto-detected, `setLocale()` to override)
+  and **keyboard-accessible** (Escape closes panels, ARIA dialog roles).
+- **TopoJSON, WKT and Shapefiles** are view-only (export them to an editable format).
 
 ## Editing model
 
@@ -48,9 +52,9 @@ the sibling libraries (docxedit / odtedit / sheetedit).
 | Format | Editing | Notes |
 |---|---|---|
 | GeoJSON (`FeatureCollection`) | full, byte-lossless | properties, geometry, add/delete, style |
-| KML / KMZ | full, byte-lossless | geometry (point/line/polygon), name/description, add/delete |
-| GPX | byte-lossless | waypoint move, name/description, add/delete; track/route vertex-edit deferred |
-| TopoJSON / WKT | view-only | export to edit |
+| KML / KMZ | full, byte-lossless | geometry (point/line/polygon), name/description, colour, add/delete |
+| GPX | byte-lossless | waypoint + single-segment track/route reshape, name/description, add/delete |
+| TopoJSON / WKT / Shapefile | view-only | export to edit |
 
 ## API
 
@@ -85,6 +89,7 @@ content and file name. The pure edit helpers (`applyPropertyEdit`, `setKmlGeomet
 [`fflate`](https://github.com/101arrowz/fflate) (KMZ zip, MIT),
 [`topojson-client`](https://github.com/topojson/topojson-client) (MIT),
 [`wellknown`](https://github.com/mapbox/wellknown) (WKT, ISC),
+[`shpjs`](https://github.com/calvinmetcalf/shapefile-js) (shapefile, MIT),
 [`hammerjs`](https://github.com/hammerjs/hammer.js) (touch, MIT).
 
 ## Develop
@@ -92,7 +97,8 @@ content and file name. The pure edit helpers (`applyPropertyEdit`, `setKmlGeomet
 ```bash
 npm install
 npm run dev       # demo at localhost:5173
-npm test          # byte-lossless round-trip tests
+npm test          # unit tests (byte-lossless splices, measure math)
+npm run test:e2e  # Cypress end-to-end tests over the demo
 npm run build     # emit dist/ (tsc)
 ```
 
