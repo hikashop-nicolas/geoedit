@@ -18,6 +18,7 @@ import {
   deleteXmlFeature,
   insertXmlFeature,
   setKmlGeometry,
+  setKmlColor,
   setGpxWptCoord,
   buildKmlFeature,
   buildGpxFeature,
@@ -1005,7 +1006,12 @@ class GeoEditor {
       }
       if (canEdit) {
         const geom = this.features[gjIdx]?.geometry;
-        if (geom) body.appendChild(this.colorRow(gjIdx, geom, props));
+        if (geom)
+          body.appendChild(
+            this.colourRow(geom, props, (hex) =>
+              this.commitProp(gjIdx, this.colourKey(geom.type), props?.[this.colourKey(geom.type)] ?? "", hex),
+            ),
+          );
         body.appendChild(this.addPropertyRow(gjIdx));
       }
     } else if (canEdit) {
@@ -1018,6 +1024,13 @@ class GeoEditor {
       for (const [key, value] of entries) {
         if (key === "name" || key === descKey) continue;
         body.appendChild(readonlyRow(key, value));
+      }
+      // KML supports per-feature style colour (GPX has no standard style).
+      const geom = this.features[gjIdx]?.geometry;
+      if (this.kind === "kml" && geom) {
+        body.appendChild(
+          this.colourRow(geom, props, (hex) => this.commitKmlColour(srcIdx, geom.type, hex)),
+        );
       }
     } else {
       if (!entries.length) body.appendChild(textDiv(t("noProperties")));
@@ -1123,13 +1136,20 @@ class GeoEditor {
 
   // A colour picker mapped to the right simplestyle key for the geometry (points use
   // marker-color, lines stroke, polygons fill). Writes the property on change.
-  private colorRow(gjIdx: number, geom: GeoJsonGeometry, props: Record<string, unknown> | null): HTMLElement {
-    const key =
-      geom.type === "Point" || geom.type === "MultiPoint"
-        ? "marker-color"
-        : geom.type === "LineString" || geom.type === "MultiLineString"
-          ? "stroke"
-          : "fill";
+  // A colour picker prefilled from the feature's simplestyle property for its geometry
+  // (points use marker-color, lines stroke, polygons fill). onPick receives the "#rrggbb".
+  private colourKey(type: string): string {
+    if (type === "Point" || type === "MultiPoint") return "marker-color";
+    if (type === "LineString" || type === "MultiLineString") return "stroke";
+    return "fill";
+  }
+
+  private colourRow(
+    geom: GeoJsonGeometry,
+    props: Record<string, unknown> | null,
+    onPick: (hex: string) => void,
+  ): HTMLElement {
+    const key = this.colourKey(geom.type);
     const row = document.createElement("div");
     row.className = "ge-row";
     const label = document.createElement("label");
@@ -1138,9 +1158,26 @@ class GeoEditor {
     input.type = "color";
     const cur = asString(props?.[key]);
     input.value = /^#[0-9a-f]{6}$/i.test(cur ?? "") ? (cur as string) : "#1f78b4";
-    input.addEventListener("change", () => this.commitProp(gjIdx, key, props?.[key] ?? "", input.value));
+    input.addEventListener("change", () => onPick(input.value));
     row.append(label, input);
     return row;
+  }
+
+  // KML per-feature colour: splice the inline style <color> and re-render.
+  private commitKmlColour(srcIdx: number, geometryType: string, rgbHex: string): void {
+    if (!this.xmlModel) return;
+    const xf = this.xmlModel.features[srcIdx];
+    if (!xf) return;
+    try {
+      const next = setKmlColor(this.source, xf, geometryType, rgbHex);
+      if (next === this.source) return;
+      this.pushHistory();
+      this.source = next;
+      this.onChange?.();
+      this.renderFeatures(this.currentFc());
+    } catch (e) {
+      this.notifyError(t("errUpdateProp") + ": " + errMsg(e));
+    }
   }
 
   private deleteGeoProp(gjIdx: number, key: string): void {

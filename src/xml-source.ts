@@ -31,6 +31,12 @@ export interface XmlFeature {
   firstCoord?: [number, number];
   /** Content spans of the feature's <coordinates> elements (KML), in document order. */
   coordSpans?: Span[];
+  /** Content spans of an inline <color> under Icon/Line/PolyStyle (KML), for style editing. */
+  iconColor?: Span;
+  lineColor?: Span;
+  polyColor?: Span;
+  /** Offset just after the feature's inline <Style> open tag, for inserting a style child. */
+  styleContentStart?: number;
 }
 
 export interface XmlModel {
@@ -59,7 +65,16 @@ interface Frame {
   contentStart: number;
   feature?: XmlFeature; // set when this frame is itself a feature element
   text?: string; // accumulated text, only for fields/coordinates
+  isFeatureStyle?: boolean; // a <Style> that is a direct child of a feature
+  styleKind?: "icon" | "line" | "poly"; // an Icon/Line/PolyStyle under a feature style
 }
+
+const STYLE_KIND: Record<string, "icon" | "line" | "poly"> = {
+  IconStyle: "icon",
+  LineStyle: "line",
+  PolyStyle: "poly",
+};
+const COLOR_FIELD = { icon: "iconColor", line: "lineColor", poly: "polyColor" } as const;
 
 // Parse KML/GPX into a positional model. Never throws on malformed input: it returns
 // whatever features it resolved before the error.
@@ -79,8 +94,17 @@ export function parseXmlGeo(source: string, kind: GeoKindXml): XmlModel {
 
   parser.on("opentag", (t) => {
     const lc = local(t.name);
+    const parent = stack[stack.length - 1];
     const frame: Frame = { qname: t.name, local: lc, contentStart: parser.position };
     if (accumulateIn.has(lc)) frame.text = "";
+
+    // KML inline styles: a <Style> directly under a feature, and its Icon/Line/PolyStyle.
+    if (lc === "Style" && parent?.feature) {
+      frame.isFeatureStyle = true;
+      parent.feature.styleContentStart = parser.position;
+    } else if (STYLE_KIND[lc] && parent?.isFeatureStyle) {
+      frame.styleKind = STYLE_KIND[lc];
+    }
 
     if (featureTags.has(lc)) {
       const feature: XmlFeature = {
@@ -134,6 +158,12 @@ export function parseXmlGeo(source: string, kind: GeoKindXml): XmlModel {
         parent.feature.desc = { start: frame.contentStart, end: contentEnd };
         parent.feature.descText = frame.text ?? "";
       }
+    }
+
+    // KML inline style <color> (aabbggrr) under Icon/Line/PolyStyle: record its span.
+    if (frame.local === "color" && parent?.styleKind) {
+      const cur = featureStack[featureStack.length - 1];
+      if (cur) cur[COLOR_FIELD[parent.styleKind]] = { start: frame.contentStart, end: contentEnd };
     }
 
     // KML <coordinates>: capture the content span (for geometry editing) and the
@@ -234,6 +264,53 @@ export function setKmlGeometry(source: string, feature: XmlFeature, geometry: Ge
   if (!span || !pts) return source;
   const text = coordString(pts, source.slice(span.start, span.end));
   return source.slice(0, span.start) + text + source.slice(span.end);
+}
+
+// Convert an "#rrggbb" CSS colour to KML "aabbggrr" (opaque alpha).
+export function rgbToKmlColor(hex: string): string {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return "ffffffff";
+  return ("ff" + m[3] + m[2] + m[1]).toLowerCase();
+}
+
+// Convert a KML "aabbggrr" colour to "#rrggbb" (alpha dropped).
+export function kmlColorToRgb(kml: string): string | null {
+  const m = /^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(kml.trim());
+  return m ? ("#" + m[4] + m[3] + m[2]).toLowerCase() : null;
+}
+
+const KIND_OF: Record<string, "icon" | "line" | "poly"> = {
+  Point: "icon",
+  MultiPoint: "icon",
+  LineString: "line",
+  MultiLineString: "line",
+  Polygon: "poly",
+  MultiPolygon: "poly",
+};
+const STYLE_SUB = { icon: "IconStyle", line: "LineStyle", poly: "PolyStyle" } as const;
+
+// Set a KML feature's colour by editing its inline style <color> for the geometry's style
+// kind. Replaces the existing <color> span, inserts a style sub-element into an existing
+// inline <Style>, or adds a fresh inline <Style> to the Placemark. Byte-lossless elsewhere.
+export function setKmlColor(
+  source: string,
+  feature: XmlFeature,
+  geometryType: string,
+  rgbHex: string,
+): string {
+  const kind = KIND_OF[geometryType] ?? "icon";
+  const kml = rgbToKmlColor(rgbHex);
+  const span = feature[COLOR_FIELD[kind]];
+  if (span) return source.slice(0, span.start) + kml + source.slice(span.end);
+  const sub = STYLE_SUB[kind];
+  if (feature.styleContentStart != null) {
+    const child = `<${sub}><color>${kml}</color></${sub}>`;
+    const at = feature.styleContentStart;
+    return source.slice(0, at) + child + source.slice(at);
+  }
+  const styleXml = `<Style><${sub}><color>${kml}</color></${sub}></Style>`;
+  const at = feature.contentStart;
+  return source.slice(0, at) + styleXml + source.slice(at);
 }
 
 // Move a GPX wpt by replacing the lat/lon attribute values inside its open tag. Byte-

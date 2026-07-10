@@ -9,6 +9,9 @@ import {
   buildKmlDocument,
   buildGpxDocument,
   setKmlGeometry,
+  setKmlColor,
+  rgbToKmlColor,
+  kmlColorToRgb,
   setGpxWptCoord,
 } from "./xml-source";
 
@@ -134,6 +137,35 @@ describe("setXmlField CDATA safety", () => {
     const out = setXmlField(CD, model, model.features[0]!, "desc", "<i>bye</i>");
     expect(out).toContain("<![CDATA[<i>bye</i>]]>");
     expect(out).not.toContain("&lt;i&gt;");
+  });
+});
+
+describe("KML colour editing", () => {
+  it("converts CSS <-> KML colour (aabbggrr)", () => {
+    expect(rgbToKmlColor("#ff0000")).toBe("ff0000ff");
+    expect(rgbToKmlColor("#11aa22")).toBe("ff22aa11");
+    expect(kmlColorToRgb("ff0000ff")).toBe("#ff0000");
+  });
+
+  it("replaces an existing inline PolyStyle colour, byte-lossless", () => {
+    const src =
+      `<kml><Document><Placemark><name>Z</name>` +
+      `<Style><PolyStyle><color>ff112233</color></PolyStyle></Style>` +
+      `<Polygon><outerBoundaryIs><LinearRing><coordinates>0,0 1,0 1,1 0,0</coordinates>` +
+      `</LinearRing></outerBoundaryIs></Polygon></Placemark></Document></kml>`;
+    const model = parseXmlGeo(src, "kml");
+    const out = setKmlColor(src, model.features[0]!, "Polygon", "#ff0000");
+    expect(out).toBe(src.replace("ff112233", "ff0000ff"));
+  });
+
+  it("adds an inline Style when the feature has none", () => {
+    const src =
+      `<kml><Document><Placemark><name>P</name>` +
+      `<Point><coordinates>2,48</coordinates></Point></Placemark></Document></kml>`;
+    const model = parseXmlGeo(src, "kml");
+    const out = setKmlColor(src, model.features[0]!, "Point", "#00ff00");
+    expect(out).toContain("<Style><IconStyle><color>ff00ff00</color></IconStyle></Style>");
+    expect(out).toContain("<name>P</name>");
   });
 });
 
