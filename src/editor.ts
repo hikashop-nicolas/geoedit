@@ -3,7 +3,7 @@ import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { kml as kmlToGeo, gpx as gpxToGeo } from "@tmcw/togeojson";
 import { feature as topoFeature } from "topojson-client";
 import { parse as parseWkt } from "wellknown";
-import shp from "shpjs";
+import shp, { parseShp } from "shpjs";
 import { t } from "./i18n";
 import { pathLength, ringArea, formatDistance, formatArea, formatLonLat } from "./measure";
 import {
@@ -460,10 +460,21 @@ class GeoEditor {
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength,
       ) as ArrayBuffer;
-      const result = (await shp(buf)) as { features?: GeoJsonFeature[] } | { features?: GeoJsonFeature[] }[];
-      const parts = Array.isArray(result) ? result : [result];
       const features: GeoJsonFeature[] = [];
-      for (const p of parts) if (p && p.features) features.push(...p.features);
+      if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
+        // A zip of .shp/.dbf/… -> full FeatureCollection(s) with attributes.
+        const result = (await shp(buf)) as
+          | { features?: GeoJsonFeature[] }
+          | { features?: GeoJsonFeature[] }[];
+        for (const p of Array.isArray(result) ? result : [result]) {
+          if (p && p.features) features.push(...p.features);
+        }
+      } else {
+        // A bare .shp -> geometries only (its attributes live in a separate .dbf).
+        for (const geometry of parseShp(buf)) {
+          features.push({ type: "Feature", geometry: geometry as GeoJsonGeometry, properties: {} });
+        }
+      }
       const fc: FeatureCollection = { type: "FeatureCollection", features };
       this.shapefileFc = fc;
       this.canvasWrap?.querySelector(".ge-msg")?.remove();

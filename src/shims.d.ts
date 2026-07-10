@@ -11,7 +11,9 @@ declare module "wellknown" {
   export function stringify(geometry: unknown): string;
 }
 declare module "shpjs" {
-  // shp(zipOrShpBuffer) -> a GeoJSON FeatureCollection (or an array of them).
+  // shp(zipBuffer) -> a GeoJSON FeatureCollection (or an array of them).
   const shp: (buffer: ArrayBuffer | Uint8Array) => Promise<unknown>;
   export default shp;
+  // parseShp(bareShpBuffer) -> an array of GeoJSON geometries (no attributes).
+  export function parseShp(buffer: ArrayBuffer | Uint8Array): unknown[];
 }
