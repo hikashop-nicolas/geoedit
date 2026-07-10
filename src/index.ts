@@ -12,5 +12,6 @@ export {
   type GeoEditorOptions,
   type GeoEditorHandle,
 } from "./editor";
+export { setLocale, t } from "./i18n";
 export * from "./props";
 export * from "./xml-source";

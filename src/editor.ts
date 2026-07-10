@@ -3,6 +3,7 @@ import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { kml as kmlToGeo, gpx as gpxToGeo } from "@tmcw/togeojson";
 import { feature as topoFeature } from "topojson-client";
 import { parse as parseWkt } from "wellknown";
+import { t } from "./i18n";
 import {
   applyPropertyEdit,
   coerceScalar,
@@ -326,7 +327,7 @@ class GeoEditor {
     try {
       fc = toFeatureCollection(this.source, this.kind);
     } catch (e) {
-      this.showMessage(wrap, "This file could not be read as a map:\n" + errMsg(e));
+      this.showMessage(wrap, t("errRead") + "\n" + errMsg(e));
       return;
     }
     // Editing is byte-lossless for a GeoJSON FeatureCollection (source path features[i])
@@ -365,7 +366,7 @@ class GeoEditor {
       this.fitBounds(boundsOf(fc));
       if (!fc.features.length) this.showMessage(canvasWrap, "No map features found in this file.");
     } catch (e) {
-      this.showMessage(canvasWrap, "The map could not be displayed:\n" + errMsg(e));
+      this.showMessage(canvasWrap, t("errDisplay") + "\n" + errMsg(e));
     }
   }
 
@@ -470,9 +471,9 @@ class GeoEditor {
 
     if (this.editable) {
       const tools: [string, string, "point" | "line" | "polygon"][] = [
-        ["Add point", ICON.point, "point"],
-        ["Add line", ICON.line, "line"],
-        ["Add area", ICON.area, "polygon"],
+        [t("addPoint"), ICON.point, "point"],
+        [t("addLine"), ICON.line, "line"],
+        [t("addArea"), ICON.area, "polygon"],
       ];
       // GPX has no polygon geometry, so no Area tool.
       const available = this.kind === "gpx" ? tools.filter(([, , m]) => m !== "polygon") : tools;
@@ -484,7 +485,7 @@ class GeoEditor {
       }
     }
 
-    const labels = iconButton("Toggle labels", ICON.label);
+    const labels = iconButton(t("toggleLabels"), ICON.label);
     labels.addEventListener("click", () => {
       this.labelsOn = !this.labelsOn;
       labels.classList.toggle("is-active", this.labelsOn);
@@ -493,11 +494,11 @@ class GeoEditor {
     });
     bar.appendChild(labels);
 
-    const list = iconButton("Feature list", ICON.list);
+    const list = iconButton(t("featureList"), ICON.list);
     list.addEventListener("click", () => this.openFeatureList());
     bar.appendChild(list);
 
-    const exp = iconButton("Export as…", ICON.export);
+    const exp = iconButton(t("exportAs") + "…", ICON.export);
     exp.addEventListener("click", () => this.openExportPanel());
     bar.appendChild(exp);
     return bar;
@@ -506,7 +507,7 @@ class GeoEditor {
   // Export the current features as GeoJSON / KML / GPX (a downloadable/shareable copy,
   // not an in-place save). Reuses the geometry serializers.
   private openExportPanel(): void {
-    this.openSidePanel("Export as", (container) => {
+    this.openSidePanel(t("exportAs"), (container) => {
       container.classList.add("ge-export");
       for (const fmt of ["geojson", "kml", "gpx"] as const) {
         const b = document.createElement("button");
@@ -535,7 +536,7 @@ class GeoEditor {
       }
       this.doExport(name, strToU8(text));
     } catch (e) {
-      this.notifyError("Could not export: " + errMsg(e));
+      this.notifyError(t("errExport") + ": " + errMsg(e));
     }
   }
 
@@ -599,7 +600,7 @@ class GeoEditor {
 
   // Open the side panel listing every feature, with a filter and select/zoom/delete.
   private openFeatureList(): void {
-    this.openSidePanel("Features", (container) => this.renderFeatureList(container));
+    this.openSidePanel(t("features"), (container) => this.renderFeatureList(container));
   }
 
   // A self-contained slide-in side panel inside the editor (no host UI dependency).
@@ -615,7 +616,7 @@ class GeoEditor {
     const close = document.createElement("button");
     close.className = "ge-close";
     close.textContent = "×";
-    close.setAttribute("aria-label", "Close");
+    close.setAttribute("aria-label", t("close"));
     close.addEventListener("click", () => this.closeSidePanel());
     head.append(h, close);
     const body = document.createElement("div");
@@ -633,7 +634,7 @@ class GeoEditor {
     container.classList.add("ge-list");
     const filter = document.createElement("input");
     filter.className = "ge-list-filter";
-    filter.placeholder = "Filter features…";
+    filter.placeholder = t("filterFeatures");
     const list = document.createElement("div");
     list.className = "ge-list-items";
     container.append(filter, list);
@@ -658,7 +659,7 @@ class GeoEditor {
           const del = document.createElement("button");
           del.className = "ge-rowdel";
           del.textContent = "×";
-          del.title = "Delete feature";
+          del.title = t("deleteFeature");
           del.addEventListener("click", () => {
             this.removeFeature(i, f.__srcIdx ?? -1);
             build();
@@ -667,7 +668,7 @@ class GeoEditor {
         }
         list.appendChild(item);
       });
-      if (!shown) list.appendChild(textDiv("No features."));
+      if (!shown) list.appendChild(textDiv(t("noFeatures")));
     };
     filter.addEventListener("input", build);
     build();
@@ -750,7 +751,7 @@ class GeoEditor {
       this.activeTool = next;
       this.syncToolButtons();
     } catch (e) {
-      this.notifyError("Could not start drawing: " + errMsg(e));
+      this.notifyError(t("errDraw") + ": " + errMsg(e));
     }
   }
 
@@ -773,7 +774,7 @@ class GeoEditor {
       this.map?.draw();
       this.showEditBar();
     } catch (e) {
-      this.notifyError("Could not edit shape: " + errMsg(e));
+      this.notifyError(t("errEditShape") + ": " + errMsg(e));
       this.cancelShapeEdit();
     }
   }
@@ -784,14 +785,14 @@ class GeoEditor {
     const bar = document.createElement("div");
     bar.className = "ge-editbar";
     const label = document.createElement("span");
-    label.textContent = "Drag the handles to reshape";
+    label.textContent = t("dragToReshape");
     const done = document.createElement("button");
     done.className = "ge-btn ge-primary";
-    done.textContent = "Done";
+    done.textContent = t("done");
     done.addEventListener("click", () => this.finishShapeEdit());
     const cancel = document.createElement("button");
     cancel.className = "ge-btn";
-    cancel.textContent = "Cancel";
+    cancel.textContent = t("cancel");
     cancel.addEventListener("click", () => this.cancelShapeEdit());
     bar.append(label, done, cancel);
     this.canvasWrap.appendChild(bar);
@@ -826,7 +827,7 @@ class GeoEditor {
       this.onChange?.();
       this.renderFeatures(this.currentFc());
     } catch (e) {
-      this.notifyError("Could not save shape: " + errMsg(e));
+      this.notifyError(t("errSaveShape") + ": " + errMsg(e));
     }
   }
 
@@ -850,7 +851,7 @@ class GeoEditor {
     const close = document.createElement("button");
     close.className = "ge-close";
     close.textContent = "×";
-    close.setAttribute("aria-label", "Close");
+    close.setAttribute("aria-label", t("close"));
     close.addEventListener("click", () => panel.classList.remove("is-open"));
     panel.appendChild(close);
     wrap.appendChild(panel);
@@ -870,7 +871,7 @@ class GeoEditor {
     const body = document.createElement("div");
     body.className = "ge-body";
     const title = document.createElement("h4");
-    title.textContent = "Feature";
+    title.textContent = t("feature");
     body.appendChild(title);
 
     const isGeojson = this.kind === "geojson";
@@ -882,7 +883,7 @@ class GeoEditor {
     if (isGeojson) {
       // GeoJSON: every scalar property is editable in place; new keys can be added and
       // existing ones removed.
-      if (!entries.length && !canEdit) body.appendChild(textDiv("No properties."));
+      if (!entries.length && !canEdit) body.appendChild(textDiv(t("noProperties")));
       for (const [key, value] of entries) {
         const scalar = value === null || ["string", "number", "boolean"].includes(typeof value);
         body.appendChild(
@@ -913,7 +914,7 @@ class GeoEditor {
         body.appendChild(readonlyRow(key, value));
       }
     } else {
-      if (!entries.length) body.appendChild(textDiv("No properties."));
+      if (!entries.length) body.appendChild(textDiv(t("noProperties")));
       for (const [key, value] of entries) body.appendChild(readonlyRow(key, value));
     }
 
@@ -921,8 +922,8 @@ class GeoEditor {
       body.appendChild(
         hintDiv(
           isGeojson
-            ? "Read-only (not a FeatureCollection)."
-            : "This feature could not be matched to the source; read-only.",
+            ? t("readonlyNotFc")
+            : t("readonlyUnmatched"),
         ),
       );
     }
@@ -932,13 +933,13 @@ class GeoEditor {
       if (geom && this.isEditableGeometry(geom)) {
         const edit = document.createElement("button");
         edit.className = "ge-btn";
-        edit.textContent = "Edit shape";
+        edit.textContent = t("editShape");
         edit.addEventListener("click", () => this.startShapeEdit(gjIdx, srcIdx));
         body.appendChild(edit);
       }
       const del = document.createElement("button");
       del.className = "ge-btn ge-danger";
-      del.textContent = "Delete feature";
+      del.textContent = t("deleteFeature");
       del.addEventListener("click", () => {
         panel.classList.remove("is-open");
         this.removeFeature(gjIdx, srcIdx);
@@ -981,7 +982,7 @@ class GeoEditor {
       const del = document.createElement("button");
       del.className = "ge-rowdel";
       del.textContent = "×";
-      del.title = "Remove property";
+      del.title = t("removeProperty");
       del.addEventListener("click", onDelete);
       row.appendChild(del);
     }
@@ -993,13 +994,13 @@ class GeoEditor {
     const row = document.createElement("div");
     row.className = "ge-addprop";
     const key = document.createElement("input");
-    key.placeholder = "new property";
+    key.placeholder = t("newProperty");
     const val = document.createElement("input");
-    val.placeholder = "value";
+    val.placeholder = t("value");
     const add = document.createElement("button");
     add.className = "ge-btn";
     add.textContent = "+";
-    add.title = "Add property";
+    add.title = t("addProperty");
     const commit = () => {
       const k = key.value.trim();
       if (!k) return;
@@ -1026,7 +1027,7 @@ class GeoEditor {
     const row = document.createElement("div");
     row.className = "ge-row";
     const label = document.createElement("label");
-    label.textContent = "color";
+    label.textContent = t("colour");
     const input = document.createElement("input");
     input.type = "color";
     const cur = asString(props?.[key]);
@@ -1045,7 +1046,7 @@ class GeoEditor {
       this.renderFeatures(this.currentFc());
       this.reshow(gjIdx, -1);
     } catch (e) {
-      this.notifyError("Could not delete property: " + errMsg(e));
+      this.notifyError(t("errDelProp") + ": " + errMsg(e));
     }
   }
 
@@ -1068,7 +1069,7 @@ class GeoEditor {
     body.className = "ge-body";
 
     const title = document.createElement("h4");
-    title.textContent = "New " + geomLabel(geometry.type);
+    title.textContent = t("newThing", { thing: geomLabel(geometry.type) });
     body.appendChild(title);
 
     const nameInput = labelledInput(body, "name");
@@ -1078,10 +1079,10 @@ class GeoEditor {
     actions.className = "ge-actions";
     const add = document.createElement("button");
     add.className = "ge-btn ge-primary";
-    add.textContent = "Add";
+    add.textContent = t("add");
     const cancel = document.createElement("button");
     cancel.className = "ge-btn";
-    cancel.textContent = "Cancel";
+    cancel.textContent = t("cancel");
     add.addEventListener("click", () => {
       const properties: Record<string, unknown> = {};
       if (nameInput.value.trim()) properties.name = nameInput.value.trim();
@@ -1112,7 +1113,7 @@ class GeoEditor {
             ? buildKmlFeature(geometry, props)
             : buildGpxFeature(geometry, props);
         if (!xml) {
-          this.notifyError("This geometry is not supported by " + this.kind + ".");
+          this.notifyError(t("geomUnsupported", { kind: this.kind }));
           return;
         }
         this.source = insertXmlFeature(this.source, this.xmlModel, xml);
@@ -1120,7 +1121,7 @@ class GeoEditor {
       this.onChange?.();
       this.renderFeatures(this.currentFc());
     } catch (e) {
-      this.notifyError("Could not add feature: " + errMsg(e));
+      this.notifyError(t("errAddFeat") + ": " + errMsg(e));
     }
   }
 
@@ -1137,7 +1138,7 @@ class GeoEditor {
       this.onChange?.();
       this.renderFeatures(this.currentFc());
     } catch (e) {
-      this.notifyError("Could not delete feature: " + errMsg(e));
+      this.notifyError(t("errDelFeat") + ": " + errMsg(e));
     }
   }
 
@@ -1155,7 +1156,7 @@ class GeoEditor {
       this.onChange?.();
       this.renderFeatures(this.currentFc());
     } catch (e) {
-      this.notifyError("Could not update property: " + errMsg(e));
+      this.notifyError(t("errUpdateProp") + ": " + errMsg(e));
     }
   }
 
@@ -1188,7 +1189,7 @@ class GeoEditor {
       if (f && f.properties) f.properties[key] = value;
       this.onChange?.();
     } catch (e) {
-      this.notifyError("Could not update property: " + errMsg(e));
+      this.notifyError(t("errUpdateProp") + ": " + errMsg(e));
     }
   }
 
@@ -1310,10 +1311,10 @@ function iconButton(title: string, icon: string): HTMLButtonElement {
 }
 
 function geomLabel(type: string): string {
-  if (type === "Point" || type === "MultiPoint") return "point";
-  if (type === "LineString" || type === "MultiLineString") return "line";
-  if (type === "Polygon" || type === "MultiPolygon") return "area";
-  return "feature";
+  if (type === "Point" || type === "MultiPoint") return t("geomPoint");
+  if (type === "LineString" || type === "MultiLineString") return t("geomLine");
+  if (type === "Polygon" || type === "MultiPolygon") return t("geomArea");
+  return t("geomFeature");
 }
 
 function asString(v: unknown): string | undefined {
