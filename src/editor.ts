@@ -481,6 +481,8 @@ class GeoEditor {
   private buildToolbar(): HTMLElement {
     const bar = document.createElement("div");
     bar.className = "ge-toolbar";
+    bar.setAttribute("role", "toolbar");
+    bar.setAttribute("aria-label", "geoedit");
 
     if (this.editable) {
       const undoBtn = iconButton(t("undo"), ICON.undo);
@@ -632,6 +634,8 @@ class GeoEditor {
     this.closeSidePanel();
     const panel = document.createElement("div");
     panel.className = "ge-side";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", title);
     const head = document.createElement("div");
     head.className = "ge-side-head";
     const h = document.createElement("span");
@@ -647,6 +651,8 @@ class GeoEditor {
     panel.append(head, body);
     this.canvasWrap.appendChild(panel);
     render(body);
+    // Move keyboard focus into the panel (first control) for keyboard users.
+    (body.querySelector("input, button") as HTMLElement | null)?.focus();
   }
 
   private closeSidePanel(): void {
@@ -778,12 +784,28 @@ class GeoEditor {
     set("redo", this.redoStack.length === 0);
   }
 
-  // Global keydown for Ctrl/Cmd+Z / +Shift+Z (or Ctrl+Y), active only when the pointer is
-  // over the editor and no text field is focused (so it never fights the host or inputs).
+  // Global keydown: Escape closes the open surface; Ctrl/Cmd+Z / +Shift+Z (or Ctrl+Y)
+  // undo/redo. Active only when the pointer is over the editor or its DOM has focus, so it
+  // never fights the host.
   private onKeydown(e: KeyboardEvent): void {
-    if (!this.editable) return;
     const inEditor = this.hovered || !!this.wrap?.contains(document.activeElement);
     if (!inEditor) return;
+
+    if (e.key === "Escape") {
+      if (this.editing) {
+        e.preventDefault();
+        this.cancelShapeEdit();
+      } else if (this.canvasWrap?.querySelector(".ge-side")) {
+        e.preventDefault();
+        this.closeSidePanel();
+      } else if (this.panel?.classList.contains("is-open")) {
+        e.preventDefault();
+        this.panel.classList.remove("is-open");
+      }
+      return;
+    }
+
+    if (!this.editable) return;
     const el = document.activeElement;
     if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
     if (!(e.ctrlKey || e.metaKey)) return;
@@ -930,6 +952,8 @@ class GeoEditor {
   private ensurePanel(wrap: HTMLElement): HTMLElement {
     const panel = document.createElement("div");
     panel.className = "ge-props";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", t("feature"));
     const close = document.createElement("button");
     close.className = "ge-close";
     close.textContent = "×";
