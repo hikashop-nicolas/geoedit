@@ -4,6 +4,7 @@ import { kml as kmlToGeo, gpx as gpxToGeo } from "@tmcw/togeojson";
 import { feature as topoFeature } from "topojson-client";
 import { parse as parseWkt } from "wellknown";
 import { t } from "./i18n";
+import { pathLength, ringArea, formatDistance, formatArea, formatLonLat } from "./measure";
 import {
   applyPropertyEdit,
   coerceScalar,
@@ -102,6 +103,10 @@ function ensureStyles(): void {
     .ge-tool:disabled:hover { border-color:var(--border,rgba(0,0,0,.18)); color:inherit; }
     .ge-canvas { position:relative; flex:1 1 auto; overflow:hidden; }
     .ge .geojs-map { height:100%; }
+    .ge-readout { position:absolute; left:8px; bottom:8px; z-index:5; display:none;
+      padding:3px 8px; border-radius:6px; font:12px/1.3 ui-monospace, monospace;
+      background:var(--bg,#fff); color:var(--text,#1c1e21); border:1px solid var(--border,#e4e6eb);
+      box-shadow:0 1px 4px rgba(0,0,0,.15); pointer-events:none; }
     .ge-side { position:absolute; top:0; right:0; bottom:0; width:260px; max-width:80%;
       display:flex; flex-direction:column; background:var(--bg,#fff); color:var(--text,#1c1e21);
       border-left:1px solid var(--border,#e4e6eb); box-shadow:-4px 0 16px rgba(0,0,0,.14);
@@ -303,6 +308,11 @@ class GeoEditor {
   private redoStack: string[] = [];
   private hovered = false;
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
+  /** Coordinate/measure readout overlay + measure-tool state. */
+  private readout: HTMLElement | null = null;
+  private coordText = "";
+  private measureText = "";
+  private measuring = false;
   /** In-progress "edit shape" session, or null. */
   private editing: { gjIdx: number; srcIdx: number; ann: any } | null = null;
   /** Last panel anchor position, so add/delete-property can re-open in place. */
@@ -386,12 +396,32 @@ class GeoEditor {
       });
       if (this.editable) this.setupDrawing(map);
 
+      // Coordinate/measure readout, updated as the pointer moves over the map.
+      this.readout = document.createElement("div");
+      this.readout.className = "ge-readout";
+      canvasWrap.appendChild(this.readout);
+      map.geoOn(geo.event.mousemove, (evt: any) => {
+        const g = evt?.geo;
+        if (g) {
+          this.coordText = formatLonLat(g.x, g.y);
+          this.updateReadout();
+        }
+      });
+
       this.renderFeatures(fc);
       this.fitBounds(boundsOf(fc));
-      if (!fc.features.length) this.showMessage(canvasWrap, "No map features found in this file.");
+      if (!fc.features.length) this.showMessage(canvasWrap, t("noMapFeatures"));
     } catch (e) {
       this.showMessage(canvasWrap, t("errDisplay") + "\n" + errMsg(e));
     }
+  }
+
+  private updateReadout(): void {
+    if (!this.readout) return;
+    this.readout.textContent = this.measureText
+      ? `${this.coordText}  ·  ${this.measureText}`
+      : this.coordText;
+    this.readout.style.display = this.coordText || this.measureText ? "block" : "none";
   }
 
   // (Re)draw all features from a FeatureCollection: clear the layer and read fresh, so
@@ -529,6 +559,14 @@ class GeoEditor {
       this.map?.draw();
     });
     bar.appendChild(labels);
+
+    // Measure needs the annotation layer, which is only created for editable documents.
+    if (this.editable) {
+      const measure = iconButton(t("measure"), ICON.measure);
+      measure.dataset.role = "measure";
+      measure.addEventListener("click", () => this.toggleMeasure(measure));
+      bar.appendChild(measure);
+    }
 
     const list = iconButton(t("featureList"), ICON.list);
     list.addEventListener("click", () => this.openFeatureList());
@@ -843,6 +881,20 @@ class GeoEditor {
       } catch {
         geometry = null;
       }
+      // Measure mode: report distance/area from the drawn shape and keep it visible.
+      if (this.measuring) {
+        const coords = (geometry?.coordinates as number[][]) ?? [];
+        if (Array.isArray(coords) && coords.length >= 2) {
+          const dist = pathLength(coords);
+          const area = coords.length >= 3 ? ringArea(coords) : 0;
+          this.measureText =
+            `${t("distance")}: ${formatDistance(dist)}` +
+            (area ? `  ·  ${t("area")}: ${formatArea(area)}` : "");
+          this.updateReadout();
+        }
+        this.annotationLayer.mode("line"); // re-arm for another measurement
+        return;
+      }
       try {
         this.annotationLayer.removeAnnotation(ann);
       } catch {
@@ -855,9 +907,37 @@ class GeoEditor {
     });
   }
 
+  // Toggle the measure tool: a line the user draws is reported as distance (and area if
+  // it has 3+ points). Turning it off removes the measure shapes and clears the readout.
+  private toggleMeasure(btn: HTMLButtonElement): void {
+    this.measuring = !this.measuring;
+    btn.classList.toggle("is-active", this.measuring);
+    this.panel?.classList.remove("is-open");
+    this.cancelShapeEdit();
+    this.activeTool = null;
+    this.syncToolButtons();
+    try {
+      if (this.measuring) {
+        this.annotationLayer?.mode("line");
+      } else {
+        this.annotationLayer?.mode(null);
+        this.annotationLayer?.removeAllAnnotations();
+        this.measureText = "";
+        this.updateReadout();
+        this.map?.draw();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   private startDrawing(mode: "point" | "line" | "polygon"): void {
     this.panel?.classList.remove("is-open");
     this.cancelShapeEdit();
+    if (this.measuring) {
+      const b = this.wrap?.querySelector('.ge-tool[data-role="measure"]') as HTMLButtonElement | null;
+      if (b) this.toggleMeasure(b); // turn measure off before drawing a feature
+    }
     try {
       // Toggle off if the same tool is already armed.
       const next = this.activeTool === mode ? null : mode;
@@ -1470,6 +1550,11 @@ const ICON = {
   ),
   // A "T" (text/label) glyph.
   label: svg('<path d="M4 5h10"/><path d="M9 5v9"/>'),
+  // A ruler (measure) glyph.
+  measure: svg(
+    '<rect x="2.5" y="6" width="13" height="6" rx="1" transform="rotate(-20 9 9)"/>' +
+      '<path d="M6 6.7l.7 1.6M8.6 5.8l1 2M11.2 5l.7 1.6"/>',
+  ),
   // A download/export arrow into a tray.
   export: svg('<path d="M9 3v8"/><path d="M6 8l3 3 3-3"/><path d="M4 14h10"/>'),
 };
