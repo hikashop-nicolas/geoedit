@@ -20,6 +20,7 @@ import {
   setKmlGeometry,
   setKmlColor,
   setGpxWptCoord,
+  setGpxGeometry,
   buildKmlFeature,
   buildGpxFeature,
   buildKmlDocument,
@@ -924,10 +925,14 @@ class GeoEditor {
       } else if (this.kind === "kml" && this.xmlModel) {
         const xf = this.xmlModel.features[session.srcIdx];
         if (xf) this.source = setKmlGeometry(this.source, xf, geometry);
-      } else if (this.kind === "gpx" && this.xmlModel && geometry.type === "Point") {
+      } else if (this.kind === "gpx" && this.xmlModel) {
         const xf = this.xmlModel.features[session.srcIdx];
-        const c = geometry.coordinates as number[];
-        if (xf) this.source = setGpxWptCoord(this.source, xf, c[0]!, c[1]!);
+        if (xf && geometry.type === "Point") {
+          const c = geometry.coordinates as number[];
+          this.source = setGpxWptCoord(this.source, xf, c[0]!, c[1]!);
+        } else if (xf && geometry.type === "LineString") {
+          this.source = setGpxGeometry(this.source, xf, geometry);
+        }
       }
       this.onChange?.();
       this.renderFeatures(this.currentFc());
@@ -1075,7 +1080,9 @@ class GeoEditor {
   // points (wpt) for GPX (track/route vertex editing is deferred).
   private isEditableGeometry(geom: GeoJsonGeometry): boolean {
     const t = geom.type;
-    if (this.kind === "gpx") return t === "Point";
+    // GPX: waypoints (Point) and single-segment tracks/routes (LineString). Multi-segment
+    // tracks render as MultiLineString and are not reshaped.
+    if (this.kind === "gpx") return t === "Point" || t === "LineString";
     return t === "Point" || t === "LineString" || t === "Polygon";
   }
 

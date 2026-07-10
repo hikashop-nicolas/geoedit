@@ -13,6 +13,7 @@ import {
   rgbToKmlColor,
   kmlColorToRgb,
   setGpxWptCoord,
+  setGpxGeometry,
 } from "./xml-source";
 
 const KML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -166,6 +167,36 @@ describe("KML colour editing", () => {
     const out = setKmlColor(src, model.features[0]!, "Point", "#00ff00");
     expect(out).toContain("<Style><IconStyle><color>ff00ff00</color></IconStyle></Style>");
     expect(out).toContain("<name>P</name>");
+  });
+});
+
+describe("setGpxGeometry (track reshape)", () => {
+  const TRK =
+    `<gpx><trk><name>T</name>` +
+    `<trkseg><trkpt lat="1" lon="2"/><trkpt lat="3" lon="4"/></trkseg></trk></gpx>`;
+
+  it("records the trkpt run and rewrites it, preserving the name", () => {
+    const model = parseXmlGeo(TRK, "gpx");
+    const out = setGpxGeometry(TRK, model.features[0]!, {
+      type: "LineString",
+      coordinates: [[10, 20], [30, 40], [50, 60]],
+    });
+    expect(out).toContain("<name>T</name>");
+    expect(out).toContain('<trkpt lat="20" lon="10"/>');
+    expect(out).toContain('<trkpt lat="60" lon="50"/>');
+    expect(out).not.toContain('lat="1" lon="2"');
+  });
+
+  it("is a no-op for a multi-segment track", () => {
+    const multi =
+      `<gpx><trk><name>M</name><trkseg><trkpt lat="1" lon="2"/></trkseg>` +
+      `<trkseg><trkpt lat="3" lon="4"/></trkseg></trk></gpx>`;
+    const model = parseXmlGeo(multi, "gpx");
+    const out = setGpxGeometry(multi, model.features[0]!, {
+      type: "LineString",
+      coordinates: [[9, 9]],
+    });
+    expect(out).toBe(multi);
   });
 });
 

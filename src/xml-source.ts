@@ -37,6 +37,10 @@ export interface XmlFeature {
   polyColor?: Span;
   /** Offset just after the feature's inline <Style> open tag, for inserting a style child. */
   styleContentStart?: number;
+  /** GPX: span covering the contiguous run of trkpt/rtept elements (single-segment only). */
+  pointRun?: Span;
+  /** GPX point element name for regeneration ("trkpt" | "rtept"). */
+  pointKind?: string;
 }
 
 export interface XmlModel {
@@ -86,6 +90,7 @@ export function parseXmlGeo(source: string, kind: GeoKindXml): XmlModel {
   const parser = new SaxesParser({ position: true });
   const stack: Frame[] = [];
   const featureStack: XmlFeature[] = [];
+  const segCounts = new Map<XmlFeature, number>(); // trkseg count per feature (GPX)
   let containerFrame: Frame | null = null;
   const containerTags =
     kind === "kml" ? new Set(["Document", "Folder", "kml"]) : new Set(["gpx"]);
@@ -129,6 +134,17 @@ export function parseXmlGeo(source: string, kind: GeoKindXml): XmlModel {
         if (Number.isFinite(lon) && Number.isFinite(lat)) cur.firstCoord = [lon, lat];
       }
     }
+    // GPX: count track segments and open the trkpt/rtept run span for the current feature.
+    const curFeat = featureStack[featureStack.length - 1];
+    if (curFeat) {
+      if (lc === "trkseg") segCounts.set(curFeat, (segCounts.get(curFeat) ?? 0) + 1);
+      if (lc === "trkpt" || lc === "rtept") {
+        if (!curFeat.pointRun) {
+          curFeat.pointRun = { start: source.lastIndexOf("<", parser.position - 1), end: -1 };
+          curFeat.pointKind = lc;
+        }
+      }
+    }
     stack.push(frame);
   });
 
@@ -158,6 +174,12 @@ export function parseXmlGeo(source: string, kind: GeoKindXml): XmlModel {
         parent.feature.desc = { start: frame.contentStart, end: contentEnd };
         parent.feature.descText = frame.text ?? "";
       }
+    }
+
+    // GPX: extend the point-run span to the end of the last trkpt/rtept.
+    if (frame.local === "trkpt" || frame.local === "rtept") {
+      const cur = featureStack[featureStack.length - 1];
+      if (cur?.pointRun) cur.pointRun.end = parser.position;
     }
 
     // KML inline style <color> (aabbggrr) under Icon/Line/PolyStyle: record its span.
@@ -190,6 +212,8 @@ export function parseXmlGeo(source: string, kind: GeoKindXml): XmlModel {
   } catch {
     /* return whatever resolved before the error */
   }
+  // Multi-segment tracks render as MultiLineString; drop the run so geometry-edit is a no-op.
+  for (const [feat, n] of segCounts) if (n > 1) feat.pointRun = undefined;
   return model;
 }
 
@@ -331,6 +355,19 @@ export function setGpxWptCoord(
     .replace(/\blon\s*=\s*'[^']*'/, `lon="${lon}"`);
   if (replaced === open) return source;
   return source.slice(0, feature.elementStart) + replaced + source.slice(feature.contentStart);
+}
+
+// Reshape a single-segment GPX track/route: replace its trkpt/rtept run with points
+// regenerated from the geometry (lat/lon only; per-point ele/time on the edited run are
+// dropped). Byte-lossless outside the run. No-op for multi-segment tracks (pointRun unset).
+export function setGpxGeometry(source: string, feature: XmlFeature, geometry: Geometry): string {
+  const run = feature.pointRun;
+  const pts = points(geometry);
+  if (!run || run.end < 0 || !feature.pointKind || !pts) return source;
+  const indent = lineIndent(source, run.start);
+  const tag = feature.pointKind;
+  const body = pts.map((c) => `<${tag} lat="${c[1]}" lon="${c[0]}"/>`).join("\n" + indent);
+  return source.slice(0, run.start) + body + source.slice(run.end);
 }
 
 // Remove a feature element and its line's leading whitespace + preceding newline, so no
