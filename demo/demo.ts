@@ -7,8 +7,8 @@ let handle: GeoEditorHandle | null = null;
 async function open(file: File): Promise<void> {
   handle?.destroy();
   editorEl.textContent = "";
-  const isKmz = /\.kmz$/i.test(file.name);
-  const input = isKmz
+  const isBinary = /\.(kmz|zip|shp)$/i.test(file.name);
+  const input = isBinary
     ? { bytes: new Uint8Array(await file.arrayBuffer()), filename: file.name }
     : { text: await file.text(), filename: file.name };
   handle = createGeoEditor(editorEl, input, {

@@ -10,3 +10,8 @@ declare module "wellknown" {
   export function parse(wkt: string): unknown;
   export function stringify(geometry: unknown): string;
 }
+declare module "shpjs" {
+  // shp(zipOrShpBuffer) -> a GeoJSON FeatureCollection (or an array of them).
+  const shp: (buffer: ArrayBuffer | Uint8Array) => Promise<unknown>;
+  export default shp;
+}

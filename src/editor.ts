@@ -3,6 +3,7 @@ import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { kml as kmlToGeo, gpx as gpxToGeo } from "@tmcw/togeojson";
 import { feature as topoFeature } from "topojson-client";
 import { parse as parseWkt } from "wellknown";
+import shp from "shpjs";
 import { t } from "./i18n";
 import { pathLength, ringArea, formatDistance, formatArea, formatLonLat } from "./measure";
 import {
@@ -192,7 +193,29 @@ interface FeatureCollection {
   features: GeoJsonFeature[];
 }
 
-type GeoKind = "geojson" | "kml" | "gpx" | "topojson" | "wkt";
+type GeoKind = "geojson" | "kml" | "gpx" | "topojson" | "wkt" | "shapefile";
+
+// A shapefile is a bare .shp (file code 9994, big-endian) or a zip containing a .shp.
+function isShapefile(bytes: Uint8Array, filename: string): boolean {
+  if (/\.shp$/i.test(filename)) return true;
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0 &&
+    bytes[1] === 0 &&
+    bytes[2] === 0x27 &&
+    bytes[3] === 0x0a
+  ) {
+    return true;
+  }
+  if (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+    try {
+      return Object.keys(unzipSync(bytes)).some((n) => /\.shp$/i.test(n));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 const WKT_RE = /^\s*(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)\s*[ZM]*\s*[(]/i;
 
@@ -325,6 +348,8 @@ class GeoEditor {
   private kmz: { entries: Record<string, Uint8Array>; kmlName: string } | null = null;
   /** The document's file name, used to name exported files. */
   private filename = "";
+  /** Parsed shapefile FeatureCollection (view-only), or null. */
+  private shapefileFc: FeatureCollection | null = null;
 
   constructor(private opts: GeoEditorOptions) {}
 
@@ -332,16 +357,22 @@ class GeoEditor {
     ensureStyles();
     this.onChange = this.opts.onChange ?? null;
     this.filename = this.opts.filename ?? input.filename ?? "";
-    // A .kmz is a zip wrapping a KML document: unzip it, edit the inner KML, re-zip on save.
+    // Binary inputs: a .kmz (zip wrapping KML) or a shapefile (bare .shp or a zip of
+    // .shp/.dbf/…). Otherwise it's a text format.
     this.kmz = null;
+    let resolved = false;
     if (input.bytes && input.bytes.length) {
       const inner = this.openKmz(input.bytes);
       if (inner) {
         this.source = inner;
         this.kind = "kml";
+        resolved = true;
+      } else if (isShapefile(input.bytes, this.filename)) {
+        this.kind = "shapefile";
+        resolved = true;
       }
     }
-    if (!this.kmz) {
+    if (!resolved) {
       this.source = input.text ?? "";
       this.kind = detectKind(this.source, this.filename);
     }
@@ -351,16 +382,9 @@ class GeoEditor {
     container.appendChild(wrap);
     this.wrap = wrap;
 
-    let fc: FeatureCollection;
-    try {
-      fc = toFeatureCollection(this.source, this.kind);
-    } catch (e) {
-      this.showMessage(wrap, t("errRead") + "\n" + errMsg(e));
-      return;
-    }
     // Editing is byte-lossless for a GeoJSON FeatureCollection (source path features[i])
-    // and for KML/GPX via the positional XML source model. TopoJSON/WKT are view-only
-    // (export them to an editable format). opts.editable can override.
+    // and for KML/GPX via the positional XML source model. TopoJSON/WKT/Shapefile are
+    // view-only (export them to an editable format). opts.editable can override.
     this.editable =
       this.opts.editable ??
       (this.kind === "geojson"
@@ -408,11 +432,47 @@ class GeoEditor {
         }
       });
 
-      this.renderFeatures(fc);
-      this.fitBounds(boundsOf(fc));
-      if (!fc.features.length) this.showMessage(canvasWrap, t("noMapFeatures"));
+      if (this.kind === "shapefile") {
+        this.showMessage(canvasWrap, t("loading"));
+        void this.loadShapefile(input.bytes!);
+      } else {
+        let fc: FeatureCollection;
+        try {
+          fc = toFeatureCollection(this.source, this.kind);
+        } catch (e) {
+          this.showMessage(canvasWrap, t("errRead") + "\n" + errMsg(e));
+          return;
+        }
+        this.renderFeatures(fc);
+        this.fitBounds(boundsOf(fc));
+        if (!fc.features.length) this.showMessage(canvasWrap, t("noMapFeatures"));
+      }
     } catch (e) {
       this.showMessage(canvasWrap, t("errDisplay") + "\n" + errMsg(e));
+    }
+  }
+
+  // Parse a shapefile (bare .shp or a zip of .shp/.dbf/…) to GeoJSON via shpjs (async),
+  // then render it. View-only; export converts it to an editable format.
+  private async loadShapefile(bytes: Uint8Array): Promise<void> {
+    try {
+      const buf = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      const result = (await shp(buf)) as { features?: GeoJsonFeature[] } | { features?: GeoJsonFeature[] }[];
+      const parts = Array.isArray(result) ? result : [result];
+      const features: GeoJsonFeature[] = [];
+      for (const p of parts) if (p && p.features) features.push(...p.features);
+      const fc: FeatureCollection = { type: "FeatureCollection", features };
+      this.shapefileFc = fc;
+      this.canvasWrap?.querySelector(".ge-msg")?.remove();
+      this.renderFeatures(fc);
+      this.fitBounds(boundsOf(fc));
+      if (!features.length && this.canvasWrap) this.showMessage(this.canvasWrap, t("noMapFeatures"));
+    } catch (e) {
+      this.canvasWrap?.querySelector(".ge-msg")?.remove();
+      if (this.canvasWrap) this.showMessage(this.canvasWrap, t("errRead") + "\n" + errMsg(e));
     }
   }
 
@@ -488,6 +548,7 @@ class GeoEditor {
 
   // Re-parse the current source to a FeatureCollection (GeoJSON edits change the source).
   private currentFc(): FeatureCollection {
+    if (this.kind === "shapefile") return this.shapefileFc ?? { type: "FeatureCollection", features: [] };
     return toFeatureCollection(this.source, this.kind);
   }
 
