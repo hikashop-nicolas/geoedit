@@ -87,6 +87,8 @@ function ensureStyles(): void {
     .ge-tool:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
     .ge-tool.is-active { background:var(--accent,#2563eb); border-color:transparent;
       color:#fff; }
+    .ge-tool:disabled { opacity:.4; cursor:default; }
+    .ge-tool:disabled:hover { border-color:var(--border,rgba(0,0,0,.18)); color:inherit; }
     .ge-canvas { position:relative; flex:1 1 auto; overflow:hidden; }
     .ge .geojs-map { height:100%; }
     .ge-side { position:absolute; top:0; right:0; bottom:0; width:260px; max-width:80%;
@@ -285,6 +287,11 @@ class GeoEditor {
   private panel: HTMLElement | null = null;
   private canvasWrap: HTMLElement | null = null;
   private activeTool: string | null = null;
+  /** Undo/redo stacks of source snapshots, plus hover/keydown state for shortcuts. */
+  private undoStack: string[] = [];
+  private redoStack: string[] = [];
+  private hovered = false;
+  private keyHandler: ((e: KeyboardEvent) => void) | null = null;
   /** In-progress "edit shape" session, or null. */
   private editing: { gjIdx: number; srcIdx: number; ann: any } | null = null;
   /** Last panel anchor position, so add/delete-property can re-open in place. */
@@ -338,6 +345,12 @@ class GeoEditor {
       (this.kind === "geojson"
         ? this.isFeatureCollectionSource(this.source)
         : this.kind === "kml" || this.kind === "gpx");
+
+    // Undo/redo shortcuts fire only while the pointer is over the editor.
+    wrap.addEventListener("mouseenter", () => (this.hovered = true));
+    wrap.addEventListener("mouseleave", () => (this.hovered = false));
+    this.keyHandler = (e) => this.onKeydown(e);
+    document.addEventListener("keydown", this.keyHandler);
 
     wrap.appendChild(this.buildToolbar());
 
@@ -470,6 +483,16 @@ class GeoEditor {
     bar.className = "ge-toolbar";
 
     if (this.editable) {
+      const undoBtn = iconButton(t("undo"), ICON.undo);
+      undoBtn.dataset.hist = "undo";
+      undoBtn.disabled = true;
+      undoBtn.addEventListener("click", () => this.undo());
+      const redoBtn = iconButton(t("redo"), ICON.redo);
+      redoBtn.dataset.hist = "redo";
+      redoBtn.disabled = true;
+      redoBtn.addEventListener("click", () => this.redo());
+      bar.append(undoBtn, redoBtn);
+
       const tools: [string, string, "point" | "line" | "polygon"][] = [
         [t("addPoint"), ICON.point, "point"],
         [t("addLine"), ICON.line, "line"],
@@ -716,6 +739,64 @@ class GeoEditor {
     }
   }
 
+  // --- Undo / redo (snapshots of the source text) ------------------------------------
+
+  // Record the pre-edit source before a mutating edit. Call right before this.source is
+  // reassigned. Caps the stack and drops the redo history.
+  private pushHistory(): void {
+    this.undoStack.push(this.source);
+    if (this.undoStack.length > 100) this.undoStack.shift();
+    this.redoStack.length = 0;
+    this.syncUndoButtons();
+  }
+
+  private restore(from: string[], to: string[]): void {
+    const snapshot = from.pop();
+    if (snapshot === undefined) return;
+    to.push(this.source);
+    this.source = snapshot;
+    this.panel?.classList.remove("is-open");
+    this.cancelShapeEdit();
+    this.onChange?.();
+    this.renderFeatures(this.currentFc());
+    this.syncUndoButtons();
+  }
+
+  private undo(): void {
+    this.restore(this.undoStack, this.redoStack);
+  }
+  private redo(): void {
+    this.restore(this.redoStack, this.undoStack);
+  }
+
+  private syncUndoButtons(): void {
+    const set = (mode: string, disabled: boolean) => {
+      const b = this.wrap?.querySelector(`.ge-tool[data-hist="${mode}"]`) as HTMLButtonElement | null;
+      if (b) b.disabled = disabled;
+    };
+    set("undo", this.undoStack.length === 0);
+    set("redo", this.redoStack.length === 0);
+  }
+
+  // Global keydown for Ctrl/Cmd+Z / +Shift+Z (or Ctrl+Y), active only when the pointer is
+  // over the editor and no text field is focused (so it never fights the host or inputs).
+  private onKeydown(e: KeyboardEvent): void {
+    if (!this.editable) return;
+    const inEditor = this.hovered || !!this.wrap?.contains(document.activeElement);
+    if (!inEditor) return;
+    const el = document.activeElement;
+    if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === "z" && !e.shiftKey) {
+      e.preventDefault();
+      this.undo();
+    } else if ((k === "z" && e.shiftKey) || k === "y") {
+      e.preventDefault();
+      this.redo();
+    }
+  }
+
   // Set up the annotation layer used for drawing new features. When an annotation is
   // completed, capture its geometry, remove the temporary annotation, and open the form.
   private setupDrawing(map: any): void {
@@ -814,6 +895,7 @@ class GeoEditor {
     this.cancelShapeEdit();
     if (!geometry) return;
     try {
+      this.pushHistory();
       if (this.kind === "geojson") {
         this.source = setGeometryCoords(this.source, session.gjIdx, geometry.coordinates);
       } else if (this.kind === "kml" && this.xmlModel) {
@@ -1039,6 +1121,7 @@ class GeoEditor {
 
   private deleteGeoProp(gjIdx: number, key: string): void {
     try {
+      this.pushHistory();
       this.source = deleteProperty(this.source, gjIdx, key);
       const f = this.features[gjIdx];
       if (f?.properties) delete f.properties[key];
@@ -1105,6 +1188,7 @@ class GeoEditor {
     try {
       if (this.kind === "geojson") {
         const feature = { type: "Feature", properties, geometry };
+        this.pushHistory();
         this.source = insertFeature(this.source, this.features.length, feature);
       } else if (this.xmlModel) {
         const props = properties as Record<string, string>;
@@ -1116,6 +1200,7 @@ class GeoEditor {
           this.notifyError(t("geomUnsupported", { kind: this.kind }));
           return;
         }
+        this.pushHistory();
         this.source = insertXmlFeature(this.source, this.xmlModel, xml);
       }
       this.onChange?.();
@@ -1129,10 +1214,12 @@ class GeoEditor {
     try {
       if (this.kind === "geojson") {
         if (gjIdx < 0) return;
+        this.pushHistory();
         this.source = deleteFeature(this.source, gjIdx);
       } else if (this.xmlModel && srcIdx >= 0) {
         const xf = this.xmlModel.features[srcIdx];
         if (!xf) return;
+        this.pushHistory();
         this.source = deleteXmlFeature(this.source, xf);
       } else return;
       this.onChange?.();
@@ -1152,6 +1239,7 @@ class GeoEditor {
     try {
       const next = setXmlField(this.source, this.xmlModel, xf, which, value);
       if (next === this.source) return;
+      this.pushHistory();
       this.source = next;
       this.onChange?.();
       this.renderFeatures(this.currentFc());
@@ -1184,6 +1272,7 @@ class GeoEditor {
     try {
       const next = applyPropertyEdit(this.source, idx, key, value);
       if (next === this.source) return;
+      this.pushHistory();
       this.source = next;
       const f = this.features[idx];
       if (f && f.properties) f.properties[key] = value;
@@ -1258,6 +1347,8 @@ class GeoEditor {
 
   dispose(): void {
     this.editing = null;
+    if (this.keyHandler) document.removeEventListener("keydown", this.keyHandler);
+    this.keyHandler = null;
     try {
       this.map?.exit?.();
     } catch {
@@ -1282,6 +1373,8 @@ const svg = (inner: string): string =>
   `<svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" ` +
   `stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">${inner}</svg>`;
 const ICON = {
+  undo: svg('<path d="M6 9H12.5a3.5 3.5 0 0 1 0 7H8"/><path d="M8.5 5.5L5.5 9l3 3.5"/>'),
+  redo: svg('<path d="M12 9H5.5a3.5 3.5 0 0 0 0 7H10"/><path d="M9.5 5.5L12.5 9l-3 3.5"/>'),
   point: svg('<circle cx="9" cy="9" r="3.4" fill="currentColor" stroke="none"/>'),
   line: svg(
     '<polyline points="3,14 7,8 11,11 15,4"/>' +

@@ -6,6 +6,8 @@
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  undo: "Undo (Ctrl+Z)",
+  redo: "Redo (Ctrl+Shift+Z)",
   addPoint: "Add point",
   addLine: "Add line",
   addArea: "Add area",
@@ -50,6 +52,8 @@ const en: Dict = {
 };
 
 const fr: Dict = {
+  undo: "Annuler (Ctrl+Z)",
+  redo: "Rétablir (Ctrl+Maj+Z)",
   addPoint: "Ajouter un point",
   addLine: "Ajouter une ligne",
   addArea: "Ajouter une zone",
@@ -94,6 +98,8 @@ const fr: Dict = {
 };
 
 const ja: Dict = {
+  undo: "元に戻す (Ctrl+Z)",
+  redo: "やり直し (Ctrl+Shift+Z)",
   addPoint: "点を追加",
   addLine: "線を追加",
   addArea: "面を追加",

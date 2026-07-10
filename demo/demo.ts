@@ -14,6 +14,7 @@ async function open(file: File): Promise<void> {
   handle = createGeoEditor(editorEl, input, {
     onChange: () => console.log("edited"),
   });
+  (window as unknown as Record<string, unknown>).geoHandle = handle; // handy in the console
 }
 
 fileInput.addEventListener("change", () => {
