@@ -60,6 +60,36 @@ describe("geoedit", () => {
     handle().invoke("getText").should("contain", "Gamma");
   });
 
+  // Regression: KML/GPX edits splice a positional source model, so undo must rebuild
+  // that model or the NEXT edit splices at stale offsets and corrupts the file. Also
+  // covers the Ctrl+Z / Ctrl+Shift+Z keyboard path (button path is covered above).
+  it("undoes a KML edit by keyboard and re-edits without corruption", () => {
+    open("cypress/fixtures/sample.kml");
+    cy.get(".ge").trigger("mouseenter"); // shortcuts fire only while hovered
+    cy.get('.ge-tool[data-role="list"]').click();
+    cy.contains(".ge-litem-name", "Eiffel").click();
+    cy.get(".ge-props.is-open input").first().clear().type("Belltower").blur();
+
+    cy.document().trigger("keydown", { key: "z", ctrlKey: true });
+    handle().invoke("getText").should("contain", "<name>Eiffel</name>").and("not.contain", "Belltower");
+    cy.document().trigger("keydown", { key: "z", ctrlKey: true, shiftKey: true }); // redo
+    handle().invoke("getText").should("contain", "<name>Belltower</name>");
+
+    // The critical step: edit a different feature after the undo/redo cycle. If the
+    // positional model were stale, this splice would land in the wrong place.
+    cy.contains(".ge-litem-name", "Louvre").click();
+    cy.get(".ge-props.is-open input").first().clear().type("Museum").blur();
+    handle()
+      .invoke("getText")
+      .should((text: string) => {
+        expect(text).to.contain("<name>Belltower</name>"); // earlier edit intact
+        expect(text).to.contain("<name>Museum</name>"); // new edit applied
+        expect(text).to.not.contain("Louvre");
+        expect(text).to.contain("2.3376,48.8606"); // Louvre's coordinates untouched
+        expect(text).to.contain("2.2945,48.8584,0"); // Eiffel's coordinates untouched
+      });
+  });
+
   it("adds and deletes a property", () => {
     open("cypress/fixtures/sample.geojson");
     cy.get('.ge-tool[data-role="list"]').click();
