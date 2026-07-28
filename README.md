@@ -102,6 +102,11 @@ npm run test:e2e  # Cypress end-to-end tests over the demo
 npm run build     # emit dist/ (tsc)
 ```
 
+**Two TypeScripts, on purpose.** The typecheck runs TypeScript 7, the native compiler, aliased as
+`tsgo` and called by path; `typescript` itself stays on 6. TypeScript 7's package is a launcher for
+a binary and exposes no JS compiler API, which Cypress needs to compile its specs, so with 7 under
+that name every e2e spec fails to bundle. Keeping both gives the fast typecheck and a working suite.
+
 ## License
 
 MIT
