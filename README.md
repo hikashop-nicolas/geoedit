@@ -9,6 +9,12 @@ file byte-for-byte**, all in the browser. No server, no upload.
 **[▶ Live demo](https://hikashop-nicolas.github.io/geoedit/)** — drop a `.geojson`,
 `.kml`, `.kmz`, `.gpx`, `.topojson` or `.wkt` file and edit it on the map.
 
+Used in production by **[Omnitext](https://hikashop-nicolas.github.io/omnitext/)**, a free
+browser editor for practically any file, as its map editor for
+[GeoJSON](https://hikashop-nicolas.github.io/omnitext/formats/geojson.html),
+[KML](https://hikashop-nicolas.github.io/omnitext/formats/kml.html) and
+[GPX](https://hikashop-nicolas.github.io/omnitext/formats/gpx.html).
+
 ```ts
 import { createGeoEditor } from "geoedit";
 
