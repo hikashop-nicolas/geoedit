@@ -44,7 +44,8 @@ const edited = handle.getText();        // the edited file, byte-for-byte
 - **Feature list** with filter and zoom-to; optional **name labels**; a **measure tool**
   (geodesic distance + area) and a live **coordinate readout**.
 - **Convert / export** the current document to GeoJSON, KML or GPX.
-- **Multilingual** (English, French, Japanese; auto-detected, `setLocale()` to override)
+- **Multilingual** (English, French, Japanese, Spanish, German, Portuguese, Russian and Simplified Chinese;
+  auto-detected, `setLocale()` to override)
   and **keyboard-accessible** (Escape closes panels, ARIA dialog roles).
 - **TopoJSON, WKT and Shapefiles** are view-only (export them to an editable format).
 
