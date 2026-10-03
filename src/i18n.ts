@@ -6,6 +6,7 @@
 type Dict = Record<string, string>;
 
 const en: Dict = {
+  mapBackground: "Map background",
   undo: "Undo (Ctrl+Z)",
   redo: "Redo (Ctrl+Shift+Z)",
   addPoint: "Add point",
@@ -57,6 +58,7 @@ const en: Dict = {
 };
 
 const fr: Dict = {
+  mapBackground: "Fond de carte",
   undo: "Annuler (Ctrl+Z)",
   redo: "Rétablir (Ctrl+Maj+Z)",
   addPoint: "Ajouter un point",
@@ -108,6 +110,7 @@ const fr: Dict = {
 };
 
 const ja: Dict = {
+  mapBackground: "地図の背景",
   undo: "元に戻す (Ctrl+Z)",
   redo: "やり直し (Ctrl+Shift+Z)",
   addPoint: "点を追加",
@@ -159,6 +162,7 @@ const ja: Dict = {
 };
 
 const es: Dict = {
+  mapBackground: "Fondo del mapa",
   undo: "Deshacer (Ctrl+Z)",
   redo: "Rehacer (Ctrl+Mayús+Z)",
   addPoint: "Añadir un punto",
@@ -210,6 +214,7 @@ const es: Dict = {
 };
 
 const de: Dict = {
+  mapBackground: "Kartenhintergrund",
   undo: "Rückgängig (Strg+Z)",
   redo: "Wiederholen (Strg+Umschalt+Z)",
   addPoint: "Punkt hinzufügen",
@@ -261,6 +266,7 @@ const de: Dict = {
 };
 
 const pt: Dict = {
+  mapBackground: "Fundo do mapa",
   undo: "Anular (Ctrl+Z)",
   redo: "Refazer (Ctrl+Shift+Z)",
   addPoint: "Adicionar um ponto",
@@ -312,6 +318,7 @@ const pt: Dict = {
 };
 
 const ru: Dict = {
+  mapBackground: "Фон карты",
   undo: "Отменить (Ctrl+Z)",
   redo: "Повторить (Ctrl+Shift+Z)",
   addPoint: "Добавить точку",
@@ -363,6 +370,7 @@ const ru: Dict = {
 };
 
 const zh: Dict = {
+  mapBackground: "地图底图",
   undo: "撤销（Ctrl+Z）",
   redo: "重做（Ctrl+Shift+Z）",
   addPoint: "添加点",

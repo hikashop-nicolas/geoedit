@@ -60,6 +60,11 @@ export interface GeoEditorOptions {
   onExport?: (name: string, bytes: Uint8Array) => void;
   /** Called on a recoverable error. Defaults to console.error. */
   onError?: (message: string) => void;
+  /** The map background is tiles fetched from openstreetmap.org, the one thing here that
+   *  leaves the device (requests carry only z/x/y, never the file). true loads it, false
+   *  keeps the map offline, and a function is asked the first time and whenever the user
+   *  presses the background button. Default: true, as a standalone map editor should. */
+  basemap?: boolean | (() => boolean | Promise<boolean>);
 }
 
 export interface GeoEditorHandle {
@@ -322,6 +327,8 @@ class GeoEditor {
   private wrap: HTMLElement | null = null;
   private map: any = null;
   private featureLayer: any = null;
+  private basemapLayer: any = null;
+  private toolbar: HTMLElement | null = null;
   private annotationLayer: any = null;
   private panel: HTMLElement | null = null;
   private canvasWrap: HTMLElement | null = null;
@@ -397,7 +404,8 @@ class GeoEditor {
     this.keyHandler = (e) => this.onKeydown(e);
     document.addEventListener("keydown", this.keyHandler);
 
-    wrap.appendChild(this.buildToolbar());
+    this.toolbar = this.buildToolbar();
+    wrap.appendChild(this.toolbar);
 
     const canvasWrap = document.createElement("div");
     canvasWrap.className = "ge-canvas";
@@ -412,8 +420,9 @@ class GeoEditor {
     try {
       const map = geo.map({ node, center: { x: 0, y: 0 }, zoom: 1 });
       this.map = map;
-      // The OSM basemap is always on (tile requests carry only z/x/y, never file data).
-      map.createLayer("osm", { zIndex: 0 });
+      // The basemap is the only network traffic this editor makes, so the host can hold it
+      // back; features then draw on an empty canvas and the toolbar offers to fetch it.
+      void this.resolveBasemap();
       this.featureLayer = map.createLayer("feature", {
         features: ["point", "line", "polygon"],
         zIndex: 1,
@@ -589,8 +598,32 @@ class GeoEditor {
     }
   }
 
+  /** Create the tile layer if it is wanted, asking the host each time when it asked to be
+   *  consulted: once at mount, then again whenever the user presses the background button. */
+  private async resolveBasemap(): Promise<void> {
+    if (this.basemapLayer) return;
+    const want = this.opts.basemap ?? true;
+    let allowed: boolean;
+    try {
+      allowed = typeof want === "function" ? await want() : want;
+    } catch {
+      allowed = false; // in doubt, stay offline
+    }
+    if (!allowed || !this.map || this.basemapLayer) return this.syncBasemapButton();
+    this.basemapLayer = this.map.createLayer("osm", { zIndex: 0 });
+    this.map.draw();
+    this.syncBasemapButton();
+  }
+
+  private syncBasemapButton(): void {
+    const b = this.toolbar?.querySelector<HTMLButtonElement>('[data-role="basemap"]');
+    if (!b) return;
+    b.classList.toggle("is-active", !!this.basemapLayer);
+    b.hidden = !!this.basemapLayer; // once it is on, the button has nothing left to offer
+  }
+
   // The editor's own sub-toolbar (like richdoc/pdf/sheet), rendered inside the editor
-  // container: the drawing tools. The OSM basemap is always on, so there is no toggle.
+  // container: the drawing tools, and the map background when it is not already on.
   private buildToolbar(): HTMLElement {
     const bar = document.createElement("div");
     bar.className = "ge-toolbar";
@@ -621,6 +654,15 @@ class GeoEditor {
         b.addEventListener("click", () => this.startDrawing(mode));
         bar.appendChild(b);
       }
+    }
+
+    // Only where the host asked to be consulted: with a plain true/false there is nothing
+    // for the user to decide here.
+    if (typeof this.opts.basemap === "function") {
+      const base = iconButton(t("mapBackground"), ICON.basemap);
+      base.dataset.role = "basemap";
+      base.addEventListener("click", () => void this.resolveBasemap());
+      bar.appendChild(base);
     }
 
     const labels = iconButton(t("toggleLabels"), ICON.label);
@@ -1618,6 +1660,7 @@ const ICON = {
       '<circle cx="15" cy="4" r="1.7" fill="currentColor" stroke="none"/>',
   ),
   area: svg('<polygon points="4,5 14,6 12.5,15 5,13"/>'),
+  basemap: svg('<circle cx="9" cy="9" r="6.5"/><ellipse cx="9" cy="9" rx="2.8" ry="6.5"/><line x1="2.5" y1="9" x2="15.5" y2="9"/>'),
   list: svg(
     '<line x1="6" y1="5" x2="15" y2="5"/><line x1="6" y1="9" x2="15" y2="9"/>' +
       '<line x1="6" y1="13" x2="15" y2="13"/><circle cx="3" cy="5" r="1" fill="currentColor" stroke="none"/>' +
